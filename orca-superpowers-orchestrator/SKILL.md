@@ -56,9 +56,11 @@ Diferente do handoff em cadeia simples, o Orquestrador atua estritamente como **
 
 O Orquestrador suporta qualquer permutação dos 4 agentes instalados no sistema. **Abrir a TUI interativa é OBRIGATÓRIO em toda etapa** — todo agente nasce como TUI visível (`--focus`), e não existe fallback para modo não-interativo (`-p`/`exec`/`run`): se a TUI não abrir, o fluxo é interrompido e o usuário é avisado, jamais se recorre ao modo batch. O prompt é injetado depois, via `orca terminal send`, apenas após a TUI confirmar pronta (`tui-idle`):
 
+O modelo faz parte da invocação (`--model <modelo>` no Claude Code, `-m <modelo>` no Codex). As sugestões de modelo desta skill são apenas sugestões: o usuário define o modelo de cada etapa, inclusive nenhum (default do CLI). Modelos muito fracos (ex.: `haiku`, modelos free) costumam pular etapas de protocolo — avise uma vez, mas siga a escolha do usuário.
+
 | Agente | CLI | Comando de Abertura Interativa (via Orca CLI) |
 |---|---|---|
-| **Claude Code** | `claude` | `claude --dangerously-skip-permissions` |
+| **Claude Code** | `claude` | `claude --dangerously-skip-permissions` (acrescente `--model <modelo>` só quando o usuário escolher modelo diferente do default) |
 | **Codex CLI** | `codex` | `codex --dangerously-bypass-approvals-and-sandbox` |
 | **Antigravity CLI** | `agy` | `agy --dangerously-skip-permissions` |
 | **OpenCode CLI** | `opencode` | `opencode` |
@@ -71,6 +73,23 @@ orca terminal wait --terminal <handle> --for tui-idle --timeout-ms 120000 --json
 # satisfied: false → repita o wait uma vez com timeout maior; ainda assim false → PARE e avise o usuário (nunca use -p/exec/run)
 orca terminal send --terminal <handle> --text "<PROMPT>" --enter --json
 ```
+
+---
+
+## Matriz Agente ↔ Modelo por Papel
+
+Sugestão de pareamento agente↔modelo por papel — **não é regra nem lista fechada**. O usuário pode definir qualquer combinação, inclusive agentes ou modelos não listados; se não tiver o agente/modelo instalado, ou simplesmente não quiser usar, escolha outro. Pergunte sempre e confirme antes do Passo 1 — nunca troque papel ou modelo sozinho.
+
+| Papel | Agente + modelo | Motivo |
+|---|---|---|
+| Orquestrador | Claude Code `--model sonnet` (evite `haiku`) | Só despacha: exige obediência de protocolo (handle, `tui-idle`, avisos `ETAPA ... CONCLUÍDA`), não raciocínio caro |
+| Planner | Codex (`gpt-6-luna`, reasoning medium) | Spec + plano são o artefato de maior alavanca do ciclo |
+| Executor | Claude Code `claude --model sonnet` (alternativa: Codex) | Melhor laço editar → teste → commit atômico |
+| Reviewer | Antigravity (`agy`, default Gemini) | Contexto longo sobre diff + spec e vendor independente do Executor: não aprova o próprio trabalho |
+| Handoff em cadeia | rotaciona o agente não usado a cada salto | Independência por salto pesa mais que força bruta |
+
+- OpenCode nesta máquina só expõe modelo free (sem provider pago configurado): sugestão é usá-lo como Orquestrador ou em handoff; como Reviewer costuma ser fraco — avise uma vez e siga a escolha do usuário.
+- Se o CLI escolhido não subir a TUI em 2 tentativas de `tui-idle`, avise o usuário e pergunte qual agente usar em seguida; nunca recua para `-p`/`exec`/`run`.
 
 ---
 
@@ -92,10 +111,32 @@ orca terminal send --terminal <handle> --text "<PROMPT>" --enter --json
 
 O Orquestrador recebe o requisito inicial e pergunta ao usuário qual agente executará cada papel (ou adota a sugestão se o usuário confirmar):
 
+#### Descoberta de Modelos (sempre pergunte ao usuário)
+
+Rode no seu próprio terminal e inclua o resultado na pergunta ao usuário:
+
+| Agente | Como descobrir o modelo atual |
+|---|---|
+| OpenCode | `opencode models` (lista os modelos disponíveis; sem provider pago só aparecem os free) |
+| Claude Code | campo `model` de `%USERPROFILE%\.claude\settings.json` |
+| Codex | campos `model` e `model_reasoning_effort` de `%USERPROFILE%\.codex\config.toml` |
+| Antigravity | modelo default do vendor (Gemini); CLI não expõe flag de modelo — registre como "default" |
+
+Apresente tudo numa tabela `| Agente | CLI | Modelo atual | Observação |` e faça a pergunta dupla, com a matriz como sugestão:
+
+> *"Qual agente e qual modelo assumem cada papel? Sugestão: Planner=Codex (gpt-6-luna), Executor=Claude Code (--model sonnet), Reviewer=Antigravity (Gemini default). Confirma ou troca?"*
+
+Regras:
+- Se o usuário trocar o modelo, injete o flag correspondente na invocação daquela etapa (`claude --model <modelo>`, `codex -m <modelo>`). Se o CLI não aceitar flag de modelo, avise antes de seguir.
+- Se o modelo listado for fraco para o papel (ex.: `haiku`, ou modelo free do OpenCode em Planner/Reviewer/Executor), avise **uma vez** e sugira troca; a decisão é do usuário e vale sem insistir.
+- Sem a descoberta rodada e sem o usuário responder, não avance ao Passo 1 — mas aceite qualquer resposta: ele pode aceitar o default, trocar, indicar agente/modelo fora da lista, ou recusar a sugestão.
+
 > **Sugestão Padrão Recomendada:**
-> - **Planner:** Claude Code (`claude`)
-> - **Executor:** Codex (`codex`)
-> - **Reviewer:** Antigravity (`agy`)
+> - **Orquestrador:** Claude Code `claude --dangerously-skip-permissions --model sonnet`
+> - **Planner:** Codex (`codex`, gpt-6-luna, reasoning medium)
+> - **Executor:** Claude Code `claude --dangerously-skip-permissions --model sonnet` (alternativa: Codex)
+> - **Reviewer:** Antigravity (`agy --dangerously-skip-permissions`, Gemini default — vendor independente do Executor)
+> Tudo acima é sugestão: pergunte e deixe o usuário confirmar ou redefinir papéis e modelos. Se algum agente ou modelo sugerido não existir na máquina, diga o que existe e pergunte quem assume cada papel.
 
 Se o usuário desejar ordem personalizada (ex.: Planner=OpenCode, Executor=Claude Code, Reviewer=Codex), o Orquestrador parametriza as variáveis de execução:
 - `$PLANNER_CLI`

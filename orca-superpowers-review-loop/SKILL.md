@@ -37,6 +37,24 @@ Opera no **mesmo worktree ativo** (`--worktree active`), com o mesmo contrato da
 
 ---
 
+## Matriz Agente ↔ Modelo por Papel
+
+Sugestão de pareamento agente↔modelo por papel — **não é regra nem lista fechada**. O usuário pode definir qualquer combinação, inclusive agentes ou modelos não listados; se não tiver o agente/modelo instalado, ou simplesmente não quiser usar, escolha outro. Pergunte sempre e confirme antes do Passo 1 — nunca troque papel ou modelo sozinho.
+
+| Papel | Agente + modelo | Motivo |
+|---|---|---|
+| Orquestrador | Claude Code `--model sonnet` (evite `haiku`) | Só despacha: exige obediência de protocolo (handle, `tui-idle`, avisos `ETAPA ... CONCLUÍDA`), não raciocínio caro |
+| Planner | Codex (`gpt-6-luna`, reasoning medium) | Spec + plano são o artefato de maior alavanca do ciclo |
+| Executor | Claude Code `claude --model sonnet` (alternativa: Codex) | Melhor laço editar → teste → commit atômico |
+| Reviewer | Antigravity (`agy`, default Gemini) | Contexto longo sobre diff + spec e vendor independente do Executor: não aprova o próprio trabalho |
+| Handoff em cadeia | rotaciona o agente não usado a cada salto | Independência por salto pesa mais que força bruta |
+
+- OpenCode nesta máquina só expõe modelo free (sem provider pago configurado): sugestão é usá-lo como Orquestrador ou em handoff; como Reviewer costuma ser fraco — avise uma vez e siga a escolha do usuário.
+- Se o CLI escolhido não subir a TUI em 2 tentativas de `tui-idle`, avise o usuário e pergunte qual agente usar em seguida; nunca recua para `-p`/`exec`/`run`.
+- Ao escolher o agente, confirme também o modelo (Descoberta de Modelos no Passo 0 do orca-superpowers-orchestrator).
+
+---
+
 ## Quando Usar
 
 - Quando um review retornou **reprovado** com itens de correção e o usuário quer que outra rodada de correção + reavaliação aconteça automaticamente.
@@ -113,9 +131,10 @@ REQUISITOS DA REAVALIAÇÃO:
 2. Avalie APENAS os itens da iteração anterior + regressões que eles tenham causado.
 3. Acrescente ao mesmo relatório uma seção "## Iteração <N>" com: itens resolvidos, não resolvidos, novos e veredito.
 4. Veredito: 'Ready to merge' (aprovado) ou 'Reprovado' (com a nova lista de itens concretos).
-5. Avise o orquestrador (obrigatório, mesmo em falha):
+5. Sugestão: Reviewer de vendor independente do Executor (Antigravity/Gemini, ou Claude Code/Codex caso o Executor seja outro); o usuário pode definir outro agente.
+6. Avise o orquestrador (obrigatório, mesmo em falha):
    orca terminal send --terminal <ORQ_HANDLE> --text "ETAPA reviewer CONCLUÍDA | status: <OK|FALHA> | resumo: <3 frases> | veredito: <aprovado|reprovado> | relatorio: <caminho>" --enter --json
-6. Só depois do envio, encerre.
+7. Só depois do envio, encerre.
 ```
 
 ### Passo 3: Decisão da Malha
